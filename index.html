@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EquidadeIPViewer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      --red: #ff1a1a;
+      --red-dim: #cc0000;
+      --red-glow: #ff000066;
+      --darker: #050000;
+      --panel: #0d0000;
+      --border: #3a0000;
+      --text: #cc3333;
+      --text-dim: #661111;
+      --white: #ffdddd;
+      --scan: rgba(255, 0, 0, 0.03);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--darker);
+      color: var(--text);
+      font-family: 'Share Tech Mono', monospace;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, var(--scan) 2px, var(--scan) 4px);
+      pointer-events: none;
+      z-index: 9999;
+    }
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background: radial-gradient(ellipse at center, transparent 55%, #000 100%);
+      pointer-events: none;
+      z-index: 9998;
+    }
+    header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 200;
+    }
+    header::after {
+      content: '';
+      position: absolute;
+      bottom: -1px; left: 0;
+      width: 100%; height: 1px;
+      background: var(--red);
+      box-shadow: 0 0 12px var(--red-glow);
+    }
+    .logo {
+      font-family: 'Orbitron', monospace;
+      font-weight: 900;
+      font-size: 18px;
+      color: var(--red);
+      text-shadow: 0 0 20px var(--red-glow);
+      letter-spacing: 6px;
+      animation: flicker 8s infinite;
+    }
+    @keyframes flicker {
+      0%, 94%, 100% { opacity: 1; }
+      95% { opacity: 0.6; }
+      96% { opacity: 1; }
+      97.5% { opacity: 0.4; }
+      98% { opacity: 1; }
+    }
+    .header-right { font-size: 11px; color: var(--text-dim); letter-spacing: 2px; }
+    .header-right span { color: var(--red); }
+    .search-bar {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 200;
+    }
+    .prompt { color: var(--red); font-size: 14px; text-shadow: 0 0 8px var(--red-glow); }
+    .search-bar input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--white);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 15px;
+      letter-spacing: 2px;
+      caret-color: var(--red);
+    }
+    .search-bar input::placeholder { color: var(--text-dim); }
+    .analyze-btn {
+      background: transparent;
+      border: 1px solid var(--red);
+      color: var(--red);
+      font-family: 'Orbitron', monospace;
+      font-size: 11px;
+      letter-spacing: 3px;
+      padding: 8px 20px;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
+      box-shadow: inset 0 0 10px var(--red-glow);
+    }
+    .analyze-btn:hover { background: var(--red); color: #000; box-shadow: 0 0 20px var(--red-glow); }
+    .analyze-btn:active { transform: scale(0.97); }
+    .main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      overflow: hidden;
+      min-height: 0;
+    }
+    .map-wrap { position: relative; overflow: hidden; }
+    #map {
+      width: 100%;
+      height: 100%;
+      filter: sepia(0.5) saturate(2.5) hue-rotate(300deg) brightness(0.75) contrast(1.1);
+    }
+    .leaflet-control-zoom a {
+      background: var(--panel) !important;
+      color: var(--red) !important;
+      border-color: var(--border) !important;
+      font-family: 'Orbitron', monospace !important;
+    }
+    .leaflet-control-zoom a:hover {
+      background: var(--red) !important;
+      color: #000 !important;
+    }
+    .loading-screen {
+      position: absolute; inset: 0;
+      background: rgba(5,0,0,0.88);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      gap: 16px;
+    }
+    .loading-screen.hidden { display: none; }
+    .loading-text {
+      font-size: 12px;
+      letter-spacing: 4px;
+      color: var(--red);
+      animation: blink 0.9s infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.1; }
+    }
+    .loading-bar-wrap { width: 260px; height: 2px; background: var(--border); }
+    .loading-bar {
+      height: 100%;
+      background: var(--red);
+      box-shadow: 0 0 10px var(--red);
+      width: 0;
+    }
+    .panel {
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      position: relative;
+      z-index: 200;
+    }
+    .panel::-webkit-scrollbar { width: 4px; }
+    .panel::-webkit-scrollbar-track { background: var(--darker); }
+    .panel::-webkit-scrollbar-thumb { background: var(--red-dim); }
+    .panel-ip {
+      padding: 20px 20px 14px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    .panel-ip .ip-addr {
+      font-family: 'Orbitron', monospace;
+      font-size: 15px;
+      color: var(--red);
+      text-shadow: 0 0 15px var(--red-glow);
+      letter-spacing: 2px;
+      word-break: break-all;
+    }
+    .panel-ip .ip-location {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 6px;
+      letter-spacing: 1px;
+    }
+    .close-btn {
+      position: absolute;
+      top: 16px; right: 16px;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      width: 22px; height: 22px;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s;
+      font-family: 'Share Tech Mono', monospace;
+    }
+    .close-btn:hover { border-color: var(--red); color: var(--red); }
+    .data-section { padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .data-section-title {
+      font-size: 9px;
+      letter-spacing: 3px;
+      color: var(--text-dim);
+      padding: 6px 20px 4px;
+      text-transform: uppercase;
+    }
+    .data-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 6px 20px;
+      gap: 12px;
+      transition: background 0.15s;
+    }
+    .data-row:hover { background: rgba(255,0,0,0.04); }
+    .data-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      flex-shrink: 0;
+      padding-top: 1px;
+    }
+    .data-value {
+      font-size: 12px;
+      color: var(--white);
+      text-align: right;
+      letter-spacing: 1px;
+      word-break: break-word;
+    }
+    .data-value.highlight { color: var(--red); text-shadow: 0 0 8px var(--red-glow); }
+    .status-dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--red);
+      box-shadow: 0 0 8px var(--red);
+      margin-right: 6px;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--red); }
+      50% { opacity: 0.3; box-shadow: 0 0 2px var(--red); }
+    }
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      text-align: center;
+    }
+    .empty-state .skull {
+      font-size: 46px;
+      margin-bottom: 20px;
+      filter: drop-shadow(0 0 14px var(--red));
+      animation: pulse 3s infinite;
+    }
+    .empty-state p {
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: 2px;
+      line-height: 2.4;
+    }
+    .error-msg {
+      padding: 12px 20px;
+      color: var(--red);
+      font-size: 11px;
+      letter-spacing: 1px;
+    }
+    footer {
+      height: 28px;
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      flex-shrink: 0;
+      font-size: 9px;
+      color: var(--text-dim);
+      letter-spacing: 2px;
+      position: relative;
+      z-index: 200;
+    }
+    footer span { color: var(--red); }
+    .hell-marker {
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: #ff1a1a;
+      border: 2px solid #ff8888;
+      box-shadow: 0 0 0 5px rgba(255,0,0,0.2), 0 0 20px rgba(255,0,0,0.7);
+      animation: markerPulse 2s infinite;
+    }
+    @keyframes markerPulse {
+      0%, 100% { box-shadow: 0 0 0 5px rgba(255,0,0,0.2), 0 0 20px rgba(255,0,0,0.7); }
+      50% { box-shadow: 0 0 0 12px rgba(255,0,0,0.06), 0 0 35px rgba(255,0,0,0.4); }
+    }
+    #panel-content { display: none; }
+    .action-btn {
+      background: transparent;
+      border: 1px solid var(--red-dim);
+      color: var(--text);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 10px;
+      padding: 4px 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .action-btn:hover { border-color: var(--red); color: var(--red); box-shadow: 0 0 10px var(--red-glow); }
+    .leaflet-popup-content-wrapper {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      box-shadow: 0 0 15px var(--red-glow);
+    }
+    .leaflet-popup-tip {
+      border-top-color: var(--border) !important;
+    }
+    .leaflet-popup-close-button {
+      color: var(--red);
+    }
+    #pano {
+      width: 300px;
+      height: 200px;
+      border: 1px solid var(--red);
+      box-shadow: 0 0 10px var(--red-glow);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">EquidadeIPViewer</div>
+    <div class="header-right">IP INTELLIGENCE TERMINAL // <span id="clock">--:--:--</span></div>
+  </header>
+  <div class="search-bar">
+    <span class="prompt">&gt;_</span>
+    <input type="text" id="ip-input" placeholder="ENTER TARGET IP ADDRESS..." spellcheck="false" autocomplete="off"/>
+    <button class="analyze-btn" onclick="analyze()">ANALYZE</button>
+  </div>
+  <div class="main">
+    <div class="map-wrap">
+      <div id="map"></div>
+      <div class="loading-screen hidden" id="loading">
+        <div class="loading-text">LOCATING TARGET...</div>
+        <div class="loading-bar-wrap"><div class="loading-bar" id="load-bar"></div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="empty-state" id="empty-content">
+        <div class="skull">☠</div>
+        <p>AWAITING TARGET IP<br>ENTER ADDRESS ABOVE<br>TO BEGIN ANALYSIS</p>
+      </div>
+      <div id="panel-content">
+        <div class="panel-ip">
+          <div class="ip-addr" id="res-ip">—</div>
+          <div class="ip-location" id="res-location">—</div>
+          <button class="close-btn" onclick="clearPanel()">✕</button>
+        </div>
+        <div class="data-section">
+          <div class="data-section-title">// GEOLOCATION</div>
+          <div class="data-row">
+            <span class="data-label">CONTINENT</span>
+            <span class="data-value" id="res-continent">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">COUNTRY</span>
+            <span class="data-value highlight" id="res-country">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">REGION</span>
+            <span class="data-value" id="res-region">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">CITY</span>
+            <span class="data-value" id="res-city">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">STREET (APPROX)</span>
+            <span class="data-value" id="res-street">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">ZIP CODE</span>
+            <span class="data-value" id="res-zip">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">COORDINATES</span>
+            <span class="data-value" id="res-coords">—</span>
+          </div>
+        </div>
+        <div class="data-section">
+          <div class="data-section-title">// NETWORK</div>
+          <div class="data-row">
+            <span class="data-label">ISP / ORG</span>
+            <span class="data-value" id="res-isp">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">ASN</span>
+            <span class="data-value" id="res-asn">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">IP TYPE</span>
+            <span class="data-value highlight" id="res-type">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">TIMEZONE</span>
+            <span class="data-value" id="res-tz">—</span>
+          </div>
+        </div>
+        <div class="data-section">
+          <div class="data-section-title">// STATUS FLAGS</div>
+          <div class="data-row">
+            <span class="data-label">PROXY</span>
+            <span class="data-value" id="res-proxy">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">HOSTING</span>
+            <span class="data-value" id="res-hosting">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">MOBILE</span>
+            <span class="data-value" id="res-mobile">—</span>
+          </div>
+        </div>
+        <div class="data-section">
+          <div class="data-section-title">// OSINT ACTIONS</div>
+          <div class="data-row">
+            <span class="data-label">VIEW MAP</span>
+            <span class="data-value"><button class="action-btn" onclick="openGoogleMaps()">GOOGLE MAPS</button></span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">VIEW STREET</span>
+            <span class="data-value"><button class="action-btn" onclick="openStreetView()">STREET VIEW</button></span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">LOCAL NEWS</span>
+            <span class="data-value"><button class="action-btn" onclick="openLocalNews()">SEARCH NEWS</button></span>
+          </div>
+        </div>
+        <div id="error-area"></div>
+      </div>
+    </div>
+  </div>
+  <footer>
+    <div><span class="status-dot"></span>HELL TERMINAL v2.0</div>
+    <div>POWERED BY <span>ip-api.com</span> + <span>LEAFLET / CARTO</span> + <span>BIGDATACLOUD</span></div>
+    <div>SYS OK // <span id="status-text">IDLE</span></div>
+  </footer>
+  <script>
+    // ===== CLOCK =====
+    function updateClock() {
+      document.getElementById('clock').textContent = new Date().toTimeString().slice(0, 8);
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+    // ===== MAP =====
+    const map = L.map('map', {
+      center: [20, 0],
+      zoom: 2,
+      zoomControl: true,
+      attributionControl: false
+    });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      subdomains: 'abcd'
+    }).addTo(map);
+    const hellIcon = L.divIcon({
+      className: '',
+      html: '<div class="hell-marker"></div>',
+      iconSize: [16, 16],
+      iconAnchor: [8, 8]
+    });
+    let marker = null;
+    // ===== REVERSE GEOCODE =====
+    async function getApproximateAddress(lat, lon) {
+      try {
+        const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
+        const j = await r.json();
+        let address = '';
+        if (j.thoroughfare) address += j.thoroughfare + ', ';
+        if (j.locality) address += j.locality + ', ';
+        if (j.administrative) address += j.administrative;
+        return address.trim() || '— (Approximate; IP geo not precise)';
+      } catch (e) {
+        return '— (Error fetching address)';
+      }
+    }
+    // ===== OSINT ACTIONS =====
+    function openGoogleMaps() {
+      const coords = document.getElementById('res-coords').textContent.split(', ');
+      const lat = coords[0];
+      const lon = coords[1];
+      window.open(`https://www.google.com/maps/@${lat},${lon},18z`, '_blank');
+    }
+    function openStreetView() {
+      const coords = document.getElementById('res-coords').textContent.split(', ');
+      const lat = coords[0];
+      const lon = coords[1];
+      window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lon}&fov=90&heading=235&pitch=10`, '_blank');
+    }
+    function openLocalNews() {
+      const city = document.getElementById('res-city').textContent;
+      const country = document.getElementById('res-country').textContent.split(' (')[0];
+      window.open(`https://www.google.com/search?q=news+${encodeURIComponent(city)}+${encodeURIComponent(country)}`, '_blank');
+    }
+    // ===== ANALYZE =====
+    async function analyze() {
+      const input = document.getElementById('ip-input').value.trim();
+      if (!input) return;
+      showLoading(true);
+      setStatus('ANALYZING...');
+      document.getElementById('error-area').innerHTML = '';
+      try {
+        // Try multiple APIs in sequence until one works
+        let d = null;
+        // Attempt 1: ipapi.co (HTTPS + CORS free)
+        try {
+          const r = await fetch(`https://ipapi.co/${encodeURIComponent(input)}/json/`);
+          const j = await r.json();
+          if (j.latitude && !j.error) {
+            d = {
+              ip: j.ip,
+              city: j.city,
+              country: j.country_name,
+              country_code: j.country_code,
+              region: j.region,
+              zip: j.postal,
+              lat: j.latitude,
+              lon: j.longitude,
+              isp: j.org,
+              asn: j.asn,
+              tz: j.timezone,
+              continent: j.continent_code,
+              proxy: false, hosting: false, mobile: false
+            };
+          }
+        } catch(e1) {}
+        // Attempt 2: ip-api.com via HTTP (works if page is served via HTTP)
+        if (!d) {
+          try {
+            const r = await fetch(`http://ip-api.com/json/${encodeURIComponent(input)}?fields=status,message,continent,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,proxy,hosting,mobile,query`);
+            const j = await r.json();
+            if (j.status === 'success') {
+              d = {
+                ip: j.query, city: j.city, country: j.country,
+                country_code: j.countryCode, region: j.regionName,
+                zip: j.zip, lat: j.lat, lon: j.lon,
+                isp: j.isp || j.org, asn: j.as,
+                tz: j.timezone, continent: j.continent,
+                proxy: j.proxy, hosting: j.hosting, mobile: j.mobile
+              };
+            }
+          } catch(e2) {}
+        }
+        // Attempt 3: ipwho.is
+        if (!d) {
+          try {
+            const r = await fetch(`https://ipwho.is/${encodeURIComponent(input)}`);
+            const j = await r.json();
+            if (j.success && j.latitude) {
+              d = {
+                ip: j.ip, city: j.city, country: j.country,
+                country_code: j.country_code, region: j.region,
+                zip: j.postal || '—', lat: j.latitude, lon: j.longitude,
+                isp: j.connection?.isp || j.org || '—',
+                asn: j.connection?.asn ? 'AS'+j.connection.asn : '—',
+                tz: j.timezone?.id || '—', continent: j.continent_code,
+                proxy: false, hosting: false, mobile: false
+              };
+            }
+          } catch(e3) {}
+        }
+        // Attempt 4: freeipapi.com
+        if (!d) {
+          try {
+            const r = await fetch(`https://freeipapi.com/api/json/${encodeURIComponent(input)}`);
+            const j = await r.json();
+            if (j.ipAddress) {
+              d = {
+                ip: j.ipAddress, city: j.cityName, country: j.countryName,
+                country_code: j.countryCode, region: j.regionName,
+                zip: j.zipCode || '—', lat: j.latitude, lon: j.longitude,
+                isp: '—', asn: '—', tz: j.timeZone, continent: '—',
+                proxy: j.isProxy, hosting: false, mobile: false
+              };
+            }
+          } catch(e4) {}
+        }
+        if (!d) throw new Error('ALL APIS FAILED — CHECK IP FORMAT');
+        // Fetch approximate address (OSINT-style enhancement)
+        const address = await getApproximateAddress(d.lat, d.lon);
+        // Populate
+        document.getElementById('res-ip').textContent = d.ip;
+        document.getElementById('res-location').textContent = `${d.city || '—'}, ${d.country || '—'}`;
+        document.getElementById('res-continent').textContent = d.continent || '—';
+        document.getElementById('res-country').textContent = `${d.country || '—'} (${d.country_code || '—'})`;
+        document.getElementById('res-region').textContent = d.region || '—';
+        document.getElementById('res-city').textContent = d.city || '—';
+        document.getElementById('res-street').textContent = address;
+        document.getElementById('res-zip').textContent = d.zip || '—';
+        document.getElementById('res-coords').textContent = `${parseFloat(d.lat).toFixed(4)}, ${parseFloat(d.lon).toFixed(4)}`;
+        document.getElementById('res-isp').textContent = d.isp || '—';
+        document.getElementById('res-asn').textContent = d.asn || '—';
+        document.getElementById('res-type').textContent = d.hosting ? 'HOSTING / DATACENTER' : d.proxy ? 'PROXY / VPN' : 'RESIDENTIAL';
+        document.getElementById('res-tz').textContent = d.tz || '—';
+        const flag = v => v
+          ? '<span style="color:#ff1a1a;text-shadow:0 0 8px #ff000066">YES ⚠</span>'
+          : '<span style="color:#441111">NO</span>';
+        document.getElementById('res-proxy').innerHTML = flag(d.proxy);
+        document.getElementById('res-hosting').innerHTML = flag(d.hosting);
+        document.getElementById('res-mobile').innerHTML = flag(d.mobile);
+        // Map — fly to street level (zoom 14)
+        if (marker) marker.remove();
+        marker = L.marker([d.lat, d.lon], { icon: hellIcon }).addTo(map);
+        map.flyTo([d.lat, d.lon], 14, { duration: 2, easeLinearity: 0.3 });
+        showPanel(true);
+        showLoading(false);
+        setStatus('TARGET LOCATED');
+      } catch (e) {
+        showLoading(false);
+        setStatus('ERROR');
+        document.getElementById('panel-content').style.display = 'block';
+        document.getElementById('empty-content').style.display = 'none';
+        document.getElementById('error-area').innerHTML =
+          `<div class="error-msg">⚠ ERROR: ${e.message}</div>`;
+      }
+    }
+    function showLoading(show) {
+      const el = document.getElementById('loading');
+      const bar = document.getElementById('load-bar');
+      if (show) {
+        el.classList.remove('hidden');
+        bar.style.transition = 'none';
+        bar.style.width = '0%';
+        requestAnimationFrame(() => {
+          bar.style.transition = 'width 1.6s ease';
+          bar.style.width = '88%';
+        });
+      } else {
+        bar.style.width = '100%';
+        setTimeout(() => el.classList.add('hidden'), 300);
+      }
+    }
+    function showPanel(show) {
+      document.getElementById('panel-content').style.display = show ? 'block' : 'none';
+      document.getElementById('empty-content').style.display = show ? 'none' : 'flex';
+    }
+    function clearPanel() {
+      showPanel(false);
+      if (marker) { marker.remove(); marker = null; }
+      map.flyTo([20, 0], 2, { duration: 1.2 });
+      setStatus('IDLE');
+    }
+    function setStatus(t) {
+      document.getElementById('status-text').textContent = t;
+    }
+    document.getElementById('ip-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') analyze();
+    });
+  </script>
+</body>
+</html>
